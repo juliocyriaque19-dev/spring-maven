@@ -10,5 +10,5 @@ COPY target/*.jar app.jar
 # Exposer le port sur lequel Spring Boot écoute
 EXPOSE 8080
 
-# Commande pour lancer l'application Spring Boot
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+# Commande pour lancer l'application Spring Boot au démarrage du conteneur
+ENTRYPOINT ["java", "-jar", "app.jar"]
