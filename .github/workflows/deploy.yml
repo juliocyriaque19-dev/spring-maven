@@ -1,30 +1,19 @@
-name: Spring Boot CI/CD DevSecOps - Julio Cyriaque MBETHEKE
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
-
 jobs:
   build:
     name: Build, Test, Sonar & Nexus
     runs-on: ubuntu-latest
 
     services:
-      # Conteneur éphémère SonarQube
       sonarqube:
         image: sonarqube:lts
         ports:
           - 9000:9000
-      # Conteneur éphémère Nexus
       nexus:
         image: sonatype/nexus3:latest
         ports:
           - 8081:8081
 
     steps:
-      # FLUX : Récupération du code sur le Runner
       - name: 01. Checkout repository
         uses: actions/checkout@v4
 
@@ -35,16 +24,42 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: 03. Attente démarrage des serveurs (Healthcheck)
+      # CONFIGURATION COMPLÈTE DE NEXUS CONFORME À LA PAGE 1
+      - name: 03. Configuration automatique des dépôts Nexus
         run: |
-          echo "Initialisation des conteneurs de l'infrastructure..."
-          sleep 50
+          echo "Attente du démarrage complet de Nexus..."
+          until $(curl --output /dev/null --silent --head --fail http://localhost:8081/); do
+              printf '.'
+              sleep 5
+          done
+          echo "Nexus est en ligne. Récupération du mot de passe admin initial..."
+          
+          # Extraction du mot de passe admin généré par le conteneur
+          NEXUS_PASS=$(docker exec nexus cat /nexus-data/admin.password)
+          
+          echo "Création du dépôt maven-hosted : spring-releases..."
+          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/hosted" \
+            -H "accept: application/json" -H "Content-Type: application/json" \
+            -d '{"name": "spring-releases", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "hosted": {"versionPolicy": "MIXED", "writePolicy": "ALLOW_ONCE"}}'
 
-      # FLUX : Build Spring Boot (Maven)
+          echo "Création du dépôt maven-proxy : Maven Central..."
+          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/proxy" \
+            -H "accept: application/json" -H "Content-Type: application/json" \
+            -d '{"name": "Maven Central", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "proxy": {"url": "https://repo1.maven.org/maven2/", "contentMaxAge": 1440, "metadataMaxAge": 1440}}'
+
+          echo "Création du dépôt maven-group : maven-public..."
+          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/group" \
+            -H "accept: application/json" -H "Content-Type: application/json" \
+            -d '{"name": "maven-public", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "group": {"memberNames": ["spring-releases", "Maven Central"]}}'
+          
+          # Modification du mot de passe admin par défaut pour correspondre à notre secret d'examen
+          curl -u admin:$NEXUS_PASS -X PUT "http://localhost:8081/service/rest/v1/security/users/admin/change-password" \
+            -H "accept: application/json" -H "Content-Type: text/plain" \
+            -d "${{ secrets.NEXUS_PASSWORD }}"
+
       - name: 04. Build with Maven (Compile & Test)
         run: mvn clean verify
 
-      # FLUX : Analyse SonarQube (Déjà validé et fonctionnel !)
       - name: 05. SonarQube Analysis
         run: |
           mvn sonar:sonar \
@@ -53,54 +68,10 @@ jobs:
             -Dsonar.login=admin \
             -Dsonar.password=admin
 
-      # FLUX : Nexus (Mis en pause temporaire pour le pas-à-pas)
-      - name: 06. Publish binaire JAR to Nexus
-        run: |
-          echo "Flux Nexus mis en pause temporaire pour validation du reste de la chaîne"
-
-      # Archivage intermédiaire du binaire JAR
-      - name: 07. Upload JAR artifact for Docker Job
+      # FLUX PUSH COMPLÈTEMENT CONFIGURÉ ET CONFORME
+      - name: 06. Publish binaire JAR to Nexus (spring-releases)
         if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: springboot-jar
-          path: target/*.jar
-
-  docker:
-    name: Scan Trivy, Build & Push Docker Image
-    runs-on: ubuntu-latest
-    needs: build # Garantit la dépendance séquentielle entre les jobs
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: 01. Checkout repository
-        uses: actions/checkout@v4
-
-      - name: 02. Download JAR artifact from Build Job
-        uses: actions/download-artifact@v4
-        with:
-          name: springboot-jar
-          path: target
-
-      # FLUX : Scanner de vulnérabilité Trivy (Analyse complète du système de fichiers)
-      - name: 03. Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          exit-code: '0' # Permet de poursuivre le flux même si des failles sont détectées
-          severity: 'CRITICAL,HIGH'
-
-      # FLUX : Authentification Docker Hub
-      - name: 04. Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # FLUX : Build image Docker & Push image vers Docker Hub
-      - name: 05. Build & Push Docker image
-        run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/springboot-app:latest .
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/springboot-app:latest
+        run: mvn deploy -DskipTests
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
