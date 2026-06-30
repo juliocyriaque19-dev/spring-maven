@@ -44,13 +44,14 @@ jobs:
       - name: 04. Build with Maven (Compile & Test)
         run: mvn clean verify
 
-      # FLUX : Analyse SonarQube
+      # FLUX : Analyse SonarQube authentifiée par défaut sur l'instance éphémère
       - name: 05. SonarQube Analysis
         run: |
           mvn sonar:sonar \
             -Dsonar.projectKey=springboot-app \
             -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+            -Dsonar.login=admin \
+            -Dsonar.password=admin
 
       # FLUX : Push artefact JAR vers Nexus (Branche main uniquement)
       - name: 06. Publish binaire JAR to Nexus
