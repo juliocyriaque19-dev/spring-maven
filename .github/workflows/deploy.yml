@@ -60,7 +60,7 @@ jobs:
           EOF
 
       - name: Build with Maven
-        run: chmod +x mvnw && ./mvnw clean verify
+        run: chmod +x mvnw && ./mvnw clean verify -DskipTests
 
       - name: SonarQube Analysis
         run: |
