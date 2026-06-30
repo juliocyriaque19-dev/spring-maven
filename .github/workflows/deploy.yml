@@ -1,76 +1,134 @@
-name: Spring Boot CI/CD DevSecOps
+name: Spring Boot CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+      - develop
+
 jobs:
   build:
     name: Build, Test, Sonar & Nexus
     runs-on: ubuntu-latest
 
-    services:
-      sonarqube:
-        image: sonarqube:lts
-        ports:
-          - 9000:9000
-      nexus:
-        image: sonatype/nexus3:3.37.0
-        ports:
-          - 8081:8081
-          - 8082:8082
-
     steps:
-      - name: 01. Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 02. Set up JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
 
-      # CONFIGURATION COMPLÈTE DE NEXUS CONFORME À L'IMAGE DE L'EXAMEN
-      - name: 03. Configuration automatique des dépôts Nexus (Maven & Docker)
+      - name: Configure Maven settings.xml for Nexus
         run: |
-          echo "Attente du démarrage complet de Nexus..."
-          until $(curl --output /dev/null --silent --head --fail http://localhost:8081/); do
-              printf '.'
-              sleep 5
-          done
-          echo "Nexus est en ligne."
-          
-          # Utilisation des identifiants par défaut d'usine de l'image de base pour configurer les dépôts
-          echo "1. Création du dépôt maven-hosted : spring-releases..."
-          curl -u admin:admin123 -X POST "http://localhost:8081/service/rest/v1/repositories/maven/hosted" \
-            -H "accept: application/json" -H "Content-Type: application/json" \
-            -d '{"name": "spring-releases", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "hosted": {"versionPolicy": "MIXED", "writePolicy": "ALLOW_ONCE"}}'
+          mkdir -p ~/.m2
+          cat << 'EOF' > ~/.m2/settings.xml
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.1.0" 
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0 http://maven.apache.org/xsd/settings-1.1.0.xsd">
+              <servers>
+                  <server>
+                      <id>nexus</id>
+                      <username>${env.NEXUS_USER}</username>
+                      <password>${env.NEXUS_PASSWORD}</password>
+                  </server>
+              </servers>
+              <mirrors>
+                  <mirror>
+                      <id>nexus-public</id>
+                      <mirrorOf>*</mirrorOf>
+                      <url>http://localhost:8081/repository/maven-public/</url>
+                  </mirror>
+              </mirrors>
+              <profiles>
+                  <profile>
+                      <id>nexus</id>
+                      <repositories>
+                          <repository>
+                              <id>nexus-public</id>
+                              <url>http://localhost:8081/repository/maven-public/</url>
+                              <releases><enabled>true</enabled></releases>
+                              <snapshots><enabled>true</enabled></snapshots>
+                          </repository>
+                      </repositories>
+                      <pluginRepositories>
+                          <pluginRepository>
+                              <id>nexus-public</id>
+                              <url>http://localhost:8081/repository/maven-public/</url>
+                              <releases><enabled>true</enabled></releases>
+                              <snapshots><enabled>true</enabled></snapshots>
+                          </pluginRepository>
+                      </pluginRepositories>
+                  </profile>
+              </profiles>
+              <activeProfiles>
+                  <activeProfile>nexus</activeProfile>
+              </activeProfiles>
+          </settings>
+          EOF
 
-          echo "2. Création du dépôt docker-hosted (mis en avant sur l'image)..."
-          curl -u admin:admin123 -X POST "http://localhost:8081/service/rest/v1/repositories/docker/hosted" \
-            -H "accept: application/json" -H "Content-Type: application/json" \
-            -d '{"name": "docker-hosted", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "docker": {"v1Enabled": false, "forceBasicAuth": false, "httpPort": 8082}}'
-
-          echo "3. Activation du Realm Sécurité Docker Bearer Token..."
-          curl -u admin:admin123 -X PUT "http://localhost:8081/service/rest/v1/security/realms/active" \
-            -H "accept: application/json" -H "Content-Type: application/json" \
-            -d '["NexusAuthenticatingRealm", "NexusAuthorizingRealm", "DockerToken"]'
-            
-      - name: 04. Build with Maven (Compile & Test)
+      - name: Build with Maven
         run: mvn clean verify
 
-      - name: 05. SonarQube Analysis
+      - name: SonarQube Analysis
         run: |
           mvn sonar:sonar \
-            -Dsonar.projectKey=springboot-app \
-            -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=admin \
-            -Dsonar.password=admin
+            -Dsonar.projectKey=demo-github \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-      # FLUX NEXUS (Simulé localement pour valider la chaîne de build de la page 1)
-      - name: 06. Publish binaire JAR to Nexus (spring-releases)
+      - name: Publish to Nexus
+        if: github.ref == 'refs/heads/main'
+        run: mvn deploy -DskipTests
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Upload JAR artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: springboot-jar
+          path: target/*.jar
+
+  docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: springboot-jar
+          path: target
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push Docker image
         run: |
-          echo "Simulation du push du JAR vers http://localhost:8081/repository/spring-releases/"
-          echo "Artefact com.example:demo-github:pom:0.0.1-SNAPSHOT correctement traité."
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/demo-github:latest .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/demo-github:latest
+
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/demo-github:latest'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
