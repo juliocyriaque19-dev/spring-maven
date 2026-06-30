@@ -1,14 +1,18 @@
-# Utilise une image de base officielle avec Java 17
-FROM eclipse-temurin:17-jdk-jammy
+# Utilisation d'une image de base officielle et légère (Eclipse Temurin JDK 17)
+FROM eclipse-temurin:17-jre[cite: 1]
 
-# Définir le répertoire de travail dans le conteneur
+# Définition du répertoire de travail
 WORKDIR /app
 
-# Copier le fichier jar généré dans le conteneur
-COPY target/*.jar app.jar
+# Ajout d'un utilisateur non-root pour respecter les normes DevSecOps
+RUN useradd -m -u 1001 devsecopsuser
+USER 1001
 
-# Exposer le port sur lequel Spring Boot écoute
-EXPOSE 8080
+# Copie de l'artefact JAR généré par le build Maven
+COPY target/*.jar app.jar[cite: 1]
 
-# Commande pour lancer l'application Spring Boot au démarrage du conteneur
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Exposition du port par défaut de Spring Boot
+EXPOSE 8080[cite: 1]
+
+# Commande d'exécution sécurisée
+ENTRYPOINT ["java", "-jar", "app.jar"][cite: 1]

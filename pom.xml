@@ -56,4 +56,12 @@
 		</plugins>
 	</build>
 
+	<distributionManagement>
+    	<repository>
+        	<id>nexus</id>
+        	<name>Dépôt Spring Releases - Julio Cyriaque MBETHEKE</name>
+        	<url>http://localhost:8081/repository/spring-releases/</url>
+    	</repository>
+	</distributionManagement>
+
 </project>
