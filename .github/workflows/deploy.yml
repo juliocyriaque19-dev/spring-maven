@@ -27,6 +27,9 @@ jobs:
           cache: maven
 
       - name: Configure Maven settings.xml for Nexus
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
         run: |
           mkdir -p ~/.m2
           cat << 'EOF' > ~/.m2/settings.xml
@@ -40,6 +43,15 @@ jobs:
                       <password>${env.NEXUS_PASSWORD}</password>
                   </server>
               </servers>
+              
+              <mirrors>
+                  <mirror>
+                      <id>nexus-public</id>
+                      <mirrorOf>*</mirrorOf>
+                      <url>http://localhost:8081/repository/maven-public/</url>
+                  </mirror>
+              </mirrors>
+
               <profiles>
                   <profile>
                       <id>nexus</id>
@@ -51,8 +63,17 @@ jobs:
                               <snapshots><enabled>true</enabled></snapshots>
                           </repository>
                       </repositories>
+                      <pluginRepositories>
+                          <pluginRepository>
+                              <id>nexus-public</id>
+                              <url>http://localhost:8081/repository/maven-public/</url>
+                              <releases><enabled>true</enabled></releases>
+                              <snapshots><enabled>true</enabled></snapshots>
+                          </pluginRepository>
+                      </pluginRepositories>
                   </profile>
               </profiles>
+              
               <activeProfiles>
                   <activeProfile>nexus</activeProfile>
               </activeProfiles>
@@ -60,6 +81,9 @@ jobs:
           EOF
 
       - name: Build with Maven
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
         run: chmod +x mvnw && ./mvnw clean verify -DskipTests
 
       - name: SonarQube Analysis
@@ -71,10 +95,10 @@ jobs:
 
       - name: Publish to Nexus
         if: github.ref == 'refs/heads/main'
-        run: ./mvnw deploy -DskipTests
         env:
           NEXUS_USER: ${{ secrets.NEXUS_USER }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: ./mvnw deploy -DskipTests
 
       - name: Upload JAR artifact
         if: github.ref == 'refs/heads/main'
