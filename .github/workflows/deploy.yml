@@ -42,23 +42,22 @@ jobs:
           done
           echo "Nexus est en ligne."
           
-          NEXUS_PASS=$(docker exec nexus cat /nexus-data/admin.password)
-          
+          # Utilisation des identifiants par défaut d'usine de l'image de base pour configurer les dépôts
           echo "1. Création du dépôt maven-hosted : spring-releases..."
-          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/hosted" \
+          curl -u admin:admin123 -X POST "http://localhost:8081/service/rest/v1/repositories/maven/hosted" \
             -H "accept: application/json" -H "Content-Type: application/json" \
             -d '{"name": "spring-releases", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "hosted": {"versionPolicy": "MIXED", "writePolicy": "ALLOW_ONCE"}}'
 
           echo "2. Création du dépôt docker-hosted (mis en avant sur l'image)..."
-          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/docker/hosted" \
+          curl -u admin:admin123 -X POST "http://localhost:8081/service/rest/v1/repositories/docker/hosted" \
             -H "accept: application/json" -H "Content-Type: application/json" \
             -d '{"name": "docker-hosted", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "docker": {"v1Enabled": false, "forceBasicAuth": false, "httpPort": 8082}}'
 
           echo "3. Activation du Realm Sécurité Docker Bearer Token..."
-          curl -u admin:$NEXUS_PASS -X PUT "http://localhost:8081/service/rest/v1/security/realms/active" \
+          curl -u admin:admin123 -X PUT "http://localhost:8081/service/rest/v1/security/realms/active" \
             -H "accept: application/json" -H "Content-Type: application/json" \
             -d '["NexusAuthenticatingRealm", "NexusAuthorizingRealm", "DockerToken"]'
-
+            
       - name: 04. Build with Maven (Compile & Test)
         run: mvn clean verify
 
