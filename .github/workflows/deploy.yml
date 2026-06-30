@@ -12,6 +12,7 @@ jobs:
         image: sonatype/nexus3:latest
         ports:
           - 8081:8081
+          - 8082:8082
 
     steps:
       - name: 01. Checkout repository
@@ -24,38 +25,32 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # CONFIGURATION COMPLÈTE DE NEXUS CONFORME À LA PAGE 1
-      - name: 03. Configuration automatique des dépôts Nexus
+      # CONFIGURATION COMPLÈTE DE NEXUS CONFORME À L'IMAGE DE L'EXAMEN
+      - name: 03. Configuration automatique des dépôts Nexus (Maven & Docker)
         run: |
           echo "Attente du démarrage complet de Nexus..."
           until $(curl --output /dev/null --silent --head --fail http://localhost:8081/); do
               printf '.'
               sleep 5
           done
-          echo "Nexus est en ligne. Récupération du mot de passe admin initial..."
+          echo "Nexus est en ligne."
           
-          # Extraction du mot de passe admin généré par le conteneur
           NEXUS_PASS=$(docker exec nexus cat /nexus-data/admin.password)
           
-          echo "Création du dépôt maven-hosted : spring-releases..."
+          echo "1. Création du dépôt maven-hosted : spring-releases..."
           curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/hosted" \
             -H "accept: application/json" -H "Content-Type: application/json" \
             -d '{"name": "spring-releases", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "hosted": {"versionPolicy": "MIXED", "writePolicy": "ALLOW_ONCE"}}'
 
-          echo "Création du dépôt maven-proxy : Maven Central..."
-          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/proxy" \
+          echo "2. Création du dépôt docker-hosted (mis en avant sur l'image)..."
+          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/docker/hosted" \
             -H "accept: application/json" -H "Content-Type: application/json" \
-            -d '{"name": "Maven Central", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "proxy": {"url": "https://repo1.maven.org/maven2/", "contentMaxAge": 1440, "metadataMaxAge": 1440}}'
+            -d '{"name": "docker-hosted", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "docker": {"v1Enabled": false, "forceBasicAuth": false, "httpPort": 8082}}'
 
-          echo "Création du dépôt maven-group : maven-public..."
-          curl -u admin:$NEXUS_PASS -X POST "http://localhost:8081/service/rest/v1/repositories/maven/group" \
+          echo "3. Activation du Realm Sécurité Docker Bearer Token..."
+          curl -u admin:$NEXUS_PASS -X PUT "http://localhost:8081/service/rest/v1/security/realms/active" \
             -H "accept: application/json" -H "Content-Type: application/json" \
-            -d '{"name": "maven-public", "online": true, "storage": {"blobStoreName": "default", "strictContentTypeValidation": true}, "group": {"memberNames": ["spring-releases", "Maven Central"]}}'
-          
-          # Modification du mot de passe admin par défaut pour correspondre à notre secret d'examen
-          curl -u admin:$NEXUS_PASS -X PUT "http://localhost:8081/service/rest/v1/security/users/admin/change-password" \
-            -H "accept: application/json" -H "Content-Type: text/plain" \
-            -d "${{ secrets.NEXUS_PASSWORD }}"
+            -d '["NexusAuthenticatingRealm", "NexusAuthorizingRealm", "DockerToken"]'
 
       - name: 04. Build with Maven (Compile & Test)
         run: mvn clean verify
