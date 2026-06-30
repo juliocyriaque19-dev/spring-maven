@@ -44,7 +44,7 @@ jobs:
       - name: 04. Build with Maven (Compile & Test)
         run: mvn clean verify
 
-      # FLUX : Analyse SonarQube authentifiée par défaut sur l'instance éphémère
+      # FLUX : Analyse SonarQube (Déjà validé et fonctionnel !)
       - name: 05. SonarQube Analysis
         run: |
           mvn sonar:sonar \
@@ -53,15 +53,12 @@ jobs:
             -Dsonar.login=admin \
             -Dsonar.password=admin
 
-      # FLUX : Push artefact JAR vers Nexus (Branche main uniquement)
+      # FLUX : Nexus (Mis en pause temporaire pour le pas-à-pas)
       - name: 06. Publish binaire JAR to Nexus
-        if: github.ref == 'refs/heads/main'
-        run: mvn deploy -DskipTests
-        env:
-          NEXUS_USER: ${{ secrets.NEXUS_USER }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          echo "Flux Nexus mis en pause temporaire pour validation du reste de la chaîne"
 
-      # Archivage intermédiaire du binaire pour le job suivant
+      # Archivage intermédiaire du binaire JAR
       - name: 07. Upload JAR artifact for Docker Job
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
