@@ -60,18 +60,18 @@ jobs:
           EOF
 
       - name: Build with Maven
-        run: mvn clean verify
+        run: chmod +x mvnw && ./mvnw clean verify
 
       - name: SonarQube Analysis
         run: |
-          mvn sonar:sonar \
+          ./mvnw sonar:sonar \
             -Dsonar.projectKey=demo-github \
             -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
       - name: Publish to Nexus
         if: github.ref == 'refs/heads/main'
-        run: mvn deploy -DskipTests
+        run: ./mvnw deploy -DskipTests
         env:
           NEXUS_USER: ${{ secrets.NEXUS_USER }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
