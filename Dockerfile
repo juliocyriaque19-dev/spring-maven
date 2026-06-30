@@ -1,18 +1,14 @@
-# Utilisation d'une image de base officielle et légère
+# Utilise une image de base Java 17 (Temurin est une distribution OpenJDK)
 FROM eclipse-temurin:17-jre
 
-# Définition du répertoire de travail
+# Définit le répertoire de travail à l'intérieur du conteneur
 WORKDIR /app
 
-# Ajout d'un utilisateur non-root pour respecter les normes DevSecOps
-RUN useradd -m -u 1001 devsecopsuser
-USER 1001
-
-# Copie de l'artefact JAR généré par le build Maven
+# Copie le fichier JAR de l'application (construit par Maven) dans le conteneur
 COPY target/*.jar app.jar
 
-# Exposition du port par défaut de Spring Boot
+# Expose le port sur lequel l'application Spring Boot écoute (par défaut 8080)
 EXPOSE 8080
 
-# Commande d'exécution sécurisée
+# Commande pour exécuter l'application lorsque le conteneur démarre
 ENTRYPOINT ["java", "-jar", "app.jar"]
